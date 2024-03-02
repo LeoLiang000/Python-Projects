@@ -1,14 +1,165 @@
 import numpy as np
+import heapq
 import random
 import matplotlib.pyplot as plt
 
 import random
-import sys
 from PIL import Image, ImageDraw
+from collections import deque
+
+# moving directions
+dirs = [
+    (0, 1),  # right
+    (1, 0),  # down
+    (0, -1),  # left
+    (-1, 0)  # up
+]
+
+
+def DFS(maze):
+    """
+    @function DFS: Depth-First Search for maze solver
+    @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
+    @return: True/False
+    """
+    h, w = maze.shape[0], maze.shape[1]  # real height and width
+    start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
+
+    # explore as deep as possible
+    stack = [start]
+    while stack:
+        x, y = stack.pop()
+        if (x, y) == end: return True
+
+        if not maze[x, y].visited:
+            maze[x, y].visited = True
+
+            for dx, dy in dirs:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
+                    stack.append((nx, ny))
+
+    return False
+
+
+def BFS(maze):
+    """
+    @function BFS: Breadth-First Search
+    @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
+    @return: True/False
+    """
+
+    h, w = maze.shape[0], maze.shape[1]  # real height and width
+    start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
+
+    q = deque([start])
+    while q:
+        x, y = q.popleft()
+        if (x, y) == end: return True
+
+        if not maze[x, y].visited:
+            maze[x, y].visited = True
+
+            for dx, dy in dirs:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
+                    q.append((nx, ny))
+
+    return False
+
+
+def AStar(maze):
+    """
+    @function AStar: extension of BFS, determine moving direction based on cost
+    @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
+    @return: True/False
+    """
+
+    def getH(start, end):
+        """
+        @function getH: calculate Heuristic-cost by Manhattan distance
+        @param start: current node
+        @param end: goal
+        @return: Manhattan distance between 2 nodes
+        """
+        return abs(start[0] - end[0]) + abs(start[1] - end[1])
+
+    h, w = maze.shape[0], maze.shape[1]  # real height and width
+    start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
+
+    priorQueue = [
+        (0 + getH(start, end),  # f: total cost (g+h), where g: current path cost (default 0), h heuristic cost
+         0,  # g: current path cost
+         0,  # x: current node coordinate x
+         0)  # y: current node coordinate y
+    ]
+
+    while priorQueue:
+        f, g, x, y = heapq.heappop(priorQueue)  # pop the smallest cost node
+        if (x, y) == end: return True
+        if not maze[x, y].visited:
+            maze[x, y].visited = True
+            for dx, dy in dirs:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
+                    heapq.heappush(priorQueue, ((g + 1) + getH((nx, ny), end), (g + 1), nx, ny))
+    return False
+
+
+def MDP_VI(maze, gamma=0.9, threshold=0.01):
+    """
+    @function MDP_VI: 
+    @param maze:
+    @param gamma:
+    @param threshold:
+    @return:
+    """
+
+    h, w = maze.shape[0], maze.shape[1]  # real height and width
+    start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
+
+    states = [(x, y) for x in range(h) for y in range(w) if maze[x, y] == 1]  # movable places (NOT wall)
+    value_map = np.zeros_like(maze, dtype=np.float32)
+
+    while True:
+        delta = 0
+        for x, y in states:
+            v = value_map[x, y]
+            value_map[x, y] = max([sum([(-1 + gamma * value_map[x + dx, y + dy]) for dx, dy in dirs if
+                                        0 <= x + dx < h and 0 <= y + dy < w and maze[
+                                            x + dx, y + dy] == 1]) for action in dirs])
+            delta = max(delta, abs(v - value_map[x, y]))
+        if delta < threshold:
+            break
+
+    policy = np.zeros_like(maze, dtype=int)
+    for x, y in states:
+        values = [
+            value_map[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w else float('-inf')
+            for dx, dy in dirs]
+        policy[x, y] = np.argmax(values)
+
+    return policy
+
+
+class GridCell:
+    def __init__(self, x, y, val):
+        """
+        @class GridCell: cell of grid
+        @param x: position x
+        @param y: position y
+        @param val: current point value
+        """
+        self.x = x
+        self.y = y
+        self.val = val
+        self.visited = False
+
 
 """
 MazeGenerator is referring to online open source: https://github.com/johnsliao/python-maze-generator
 I (Hanwen Liang) have added a transform function for transferring elements of original matrix into GridCell elements 
+for usage of implementation of DFS/BFS ...
 """
 
 
@@ -146,65 +297,14 @@ class Maze:
         return matrix
 
 
-class GridCell:
-    def __init__(self, x, y, val):
-        """
-        @class GridCell: cell of grid
-        @param x: position x
-        @param y: position y
-        @param val: current point value
-        """
-        self.x = x
-        self.y = y
-        self.val = val
-        self.visited = False
-
-
-def DFS(maze):
-    """
-    @ function DFS: Depth-First Search for maze solver
-    @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
-    @return: True/False
-    """
-    h = maze.shape[0]  # real height
-    w = maze.shape[1]  # real width
-
-    # set start point and end point
-    start = (0, 0)
-    end = (h - 1, w - 1)
-
-    # moving directions
-    dirs = [
-        (0, 1),  # right
-        (1, 0),  # down
-        (0, -1),  # left
-        (-1, 0)  # up
-    ]
-
-    # explore as deep as possible
-    stack = [start]
-    while stack:
-        x, y = stack.pop()
-        if (x, y) == end: return True
-
-        curCell = maze[x, y]
-        if not curCell.visited:
-            curCell.visited = True
-
-            for dx, dy in dirs:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
-                    stack.append((nx, ny))
-
-    return False
-
-
 def main():
-    width = 10
-    height = 10
+    width = 50
+    height = 50
     maze = Maze(width=width, height=height).mat
-    ret = DFS(maze)
-    print(ret)
+    # Maze(width=width, height=height).draw()
+
+    r = AStar(maze)
+    print(r)
 
 
 if __name__ == '__main__':
