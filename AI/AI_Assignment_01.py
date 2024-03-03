@@ -108,39 +108,58 @@ def AStar(maze):
 
 def MDP_VI(maze, gamma=0.9, threshold=0.01):
     """
-    @function MDP_VI: 
-    @param maze:
-    @param gamma:
-    @param threshold:
+    @function MDP_VI: Markov Decision Process with Value Iteration
+    @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
+    @param gamma: discount factor
+    @param threshold: ending condition
     @return:
     """
 
     h, w = maze.shape[0], maze.shape[1]  # real height and width
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
 
-    states = [(x, y) for x in range(h) for y in range(w) if maze[x, y] == 1]  # movable places (NOT wall)
+    states = [(x, y) for x in range(h) for y in range(w) if maze[x, y].val == 1]  # movable places (NOT wall)
     value_map = np.zeros_like(maze, dtype=np.float32)
+    reward = -1  # reward policy
 
     while True:
         delta = 0
         for x, y in states:
-            v = value_map[x, y]
-            value_map[x, y] = max([sum([(-1 + gamma * value_map[x + dx, y + dy]) for dx, dy in dirs if
-                                        0 <= x + dx < h and 0 <= y + dy < w and maze[
-                                            x + dx, y + dy] == 1]) for action in dirs])
-            delta = max(delta, abs(v - value_map[x, y]))
+            if (x, y) == end:
+                continue
+            tmp_v = value_map[x, y]  # temp value
+            value_map[x, y] = max([sum([(reward + gamma * value_map[x + dx, y + dy]) if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val == 1 else float('-inf')]) for dx, dy in dirs])
+            delta = max(delta, abs(tmp_v - value_map[x, y]))
         if delta < threshold:
             break
 
-    policy = np.zeros_like(maze, dtype=int)
+    policy = np.zeros_like(maze, dtype=int)  # find
     for x, y in states:
-        values = [
-            value_map[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w else float('-inf')
-            for dx, dy in dirs]
+        if (x, y) == end: continue
+        values = [value_map[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w else float('-inf') for dx, dy in dirs]
         policy[x, y] = np.argmax(values)
 
     return policy
 
+
+def plot_policy_on_maze(maze, policy):
+    # Define a simple mapping from policy actions to arrow directions
+    arrows = {0: '→', 1: '↓', 2: '←', 3: '↑'}
+
+    fig, ax = plt.subplots(figsize=(maze.shape[1], maze.shape[0]))
+    data_clean = maze.astype(np.float32)
+    ax.imshow(data_clean, cmap='Pastel1', interpolation='nearest')
+
+    for (i, j), action in np.ndenumerate(policy):
+        if maze[i, j] == 1:  # Only plot arrows for open path cells
+            ax.text(j, i, arrows[action], ha='center', va='center', fontsize=12, color='black')
+
+    # Hide gridlines and ticks
+    ax.grid(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    plt.show()
 
 class GridCell:
     def __init__(self, x, y, val):
@@ -179,6 +198,7 @@ class Maze:
         self.cell_width = cell_width
         self.cells = [[Cell() for _ in range(height)] for _ in range(width)]
         self.generate()
+        self.matOrigin = ''
         self.mat = self.to_matrix()  # transform into GridCell (author: Hanwen Liang)
 
     def generate(self):
@@ -288,8 +308,8 @@ class Maze:
             matrix[i][self.width * 2] = 0  # Right wall
 
         # tarnsform matrix
-        matrix = np.array(matrix)[1:-1, 1:-1]
-        print(matrix)
+        self.matOrigin = matrix = np.array(matrix)[1:-1, 1:-1]
+        print(self.matOrigin)
 
         matrix = np.array([GridCell(i, j, matrix[i, j]) for i, row in enumerate(matrix) for j, col in enumerate(row)])
         matrix = matrix.reshape(2 * self.width - 1, 2 * self.height - 1)
@@ -298,14 +318,15 @@ class Maze:
 
 
 def main():
-    width = 50
-    height = 50
-    maze = Maze(width=width, height=height).mat
+    width = 10
+    height = 10
+    maze = Maze(width=width, height=height)
+    # print(maze.matOrigin)
     # Maze(width=width, height=height).draw()
 
-    r = AStar(maze)
-    print(r)
-
+    r = MDP_VI(maze.mat)
+    # print(r)
+    plot_policy_on_maze(maze.matOrigin, r)
 
 if __name__ == '__main__':
     main()
