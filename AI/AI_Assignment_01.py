@@ -118,28 +118,116 @@ def MDP_VI(maze, gamma=0.9, threshold=0.01):
     h, w = maze.shape[0], maze.shape[1]  # real height and width
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
 
-    states = [(x, y) for x in range(h) for y in range(w) if maze[x, y].val == 1]  # movable places (NOT wall)
+    states = [(x, y) for x in range(h) for y in range(w) if maze[x, y].val != 0]  # movable places (NOT wall)
     value_map = np.zeros_like(maze, dtype=np.float32)
     reward = -1  # reward policy
 
     while True:
         delta = 0
         for x, y in states:
-            if (x, y) == end:
-                continue
-            tmp_v = value_map[x, y]  # temp value
-            value_map[x, y] = max([sum([(reward + gamma * value_map[x + dx, y + dy]) if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val == 1 else float('-inf')]) for dx, dy in dirs])
-            delta = max(delta, abs(tmp_v - value_map[x, y]))
-        if delta < threshold:
-            break
+            if (x, y) == end: continue  # skip ending point
 
-    policy = np.zeros_like(maze, dtype=int)  # find
+            tmp_v = value_map[x, y]  # temp value
+            value_map[x, y] = max([(reward + gamma * value_map[
+                x + dx, y + dy]) if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val != 0 else float(
+                '-inf') for dx, dy in dirs])
+            delta = max(delta, abs(tmp_v - value_map[x, y]))
+
+        if delta < threshold: break
+
+    policy = np.zeros_like(maze, dtype=int)  # reflect the shortest path
     for x, y in states:
         if (x, y) == end: continue
-        values = [value_map[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w else float('-inf') for dx, dy in dirs]
+
+        values = [value_map[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w and maze[
+            x + dx, y + dy].val != 0 else float('-inf') for dx, dy in dirs]
         policy[x, y] = np.argmax(values)
 
     return policy
+
+
+def MDP_PI(maze, gamma=0.9):
+    """
+    @function MDP_PI: Markov Decision Process with Policy Iteration
+    @param policy: movable path
+    @param valueMap: Markov Value Chain for each movable grid
+    @param maze:
+    @param gamma:
+    @return:
+    """
+
+    def iterValue(policy, valueMap, maze, gamma=0.9, reward=-1):
+        while True:
+            delta = 0
+            for x in range(h):
+                for y in range(w):
+                    if maze[x, y].val == 0 or (x, y) == end: continue
+
+                    tmp_v = valueMap[x, y]
+                    dx, dy = dirs[policy[x, y]]
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < h and 0 <= ny < w and maze[nx, ny] != 0:
+                        valueMap[x, y] = reward + gamma * valueMap[nx, ny]
+                    else:
+                        valueMap[x, y] = reward
+                    delta = max(delta, abs(tmp_v - valueMap[x, y]))
+            if delta < 0.01:
+                break
+        return valueMap
+
+    h, w = maze.shape[0], maze.shape[1]  # real height and width
+    start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
+    states = [(x, y) for x in range(h) for y in range(w) if maze[x, y].val != 0]  # movable places (NOT wall)
+    value_map = np.zeros_like(maze, dtype=np.float32)
+    policy = np.random.choice([0, 1, 2, 3], size=maze.shape)  # Initial random policy
+
+    while True:
+        value_map = iterValue(policy, value_map, maze, gamma)
+        policy_stable = True
+
+        for x, y in states:
+            if (x, y) == end: continue
+
+            old_action = policy[x, y]
+            action_values = [float('-inf')] * 4
+
+            for action, (dx, dy) in enumerate(dirs):
+                if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val != 0:
+                    action_values[action] = value_map[x + dx, y + dy]
+            best_action = np.argmax(action_values)
+            policy[x, y] = best_action
+            if old_action != best_action:
+                policy_stable = False
+
+        if policy_stable:
+            break
+
+    policy = trace_path_from_start(policy, maze, start, end)
+
+    return policy
+
+
+def trace_path_from_start(policy, maze, start, end):
+    path = []
+    current_state = start
+    while True:
+        x, y = current_state
+        if (x, y) == end: break
+
+        action = policy[x, y]
+        if action == -1: break
+
+        path.append(current_state)
+
+        if action == 0:  # Right
+            current_state = (x, y + 1)
+        elif action == 1:  # Down
+            current_state = (x + 1, y)
+        elif action == 2:  # Left
+            current_state = (x, y - 1)
+        elif action == 3:  # Up
+            current_state = (x - 1, y)
+    return path
 
 
 def plot_policy_on_maze(maze, policy):
@@ -160,6 +248,7 @@ def plot_policy_on_maze(maze, policy):
     ax.set_yticks([])
 
     plt.show()
+
 
 class GridCell:
     def __init__(self, x, y, val):
@@ -324,9 +413,10 @@ def main():
     # print(maze.matOrigin)
     # Maze(width=width, height=height).draw()
 
-    r = MDP_VI(maze.mat)
+    r = MDP_PI(maze.mat)
     # print(r)
     plot_policy_on_maze(maze.matOrigin, r)
+
 
 if __name__ == '__main__':
     main()
