@@ -2,10 +2,15 @@ import numpy as np
 import heapq
 import random
 import matplotlib.pyplot as plt
-
+import copy
 import random
+import time
+import tracemalloc
+
 from PIL import Image, ImageDraw
 from collections import deque
+from matplotlib.colors import ListedColormap
+from collections import defaultdict
 
 # moving directions
 dirs = [
@@ -16,20 +21,41 @@ dirs = [
 ]
 
 
+def reconstruct_path(pred, start, end):
+    """
+    Reconstructs the path from start to end using the predecessors recorded during BFS
+    @param pred:  predecessor of each node
+    @param start: start point
+    @param end: end point
+    @return: the shortest path
+    """
+
+    current = end
+    path = []
+    while current != start:
+        path.append(current)
+        current = pred[current]
+    path.append(start)  # add the start node
+    path.reverse()  # reverse the path to start->end order
+    return path
+
+
 def DFS(maze):
     """
     @function DFS: Depth-First Search for maze solver
     @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
-    @return: True/False
+    @return: path list/None
     """
+
     h, w = maze.shape[0], maze.shape[1]  # real height and width
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
 
     # explore as deep as possible
-    stack = [start]
+    stack = [(start, [start])]  # tuple: position + path
     while stack:
-        x, y = stack.pop()
-        if (x, y) == end: return True
+        (x, y), path = stack.pop()
+        if (x, y) == end:
+            return path
 
         if not maze[x, y].visited:
             maze[x, y].visited = True
@@ -37,25 +63,31 @@ def DFS(maze):
             for dx, dy in dirs:
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
-                    stack.append((nx, ny))
+                    stack.append(
+                        ((nx, ny), path + [(nx, ny)])
+                    )
 
-    return False
+    return None
 
 
 def BFS(maze):
     """
     @function BFS: Breadth-First Search
     @param maze: 2D numpy array with maze cell values: 1 for path, 0 for wall, each cell is GridCell type
-    @return: True/False
+    @return: path/None
     """
 
     h, w = maze.shape[0], maze.shape[1]  # real height and width
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
-
+    visited = set()
+    pred = {start: None}  # predecessor of each node
+    visited.add(start)
     q = deque([start])
+
     while q:
         x, y = q.popleft()
-        if (x, y) == end: return True
+        if (x, y) == end:
+            return reconstruct_path(pred, start, end)
 
         if not maze[x, y].visited:
             maze[x, y].visited = True
@@ -63,9 +95,12 @@ def BFS(maze):
             for dx, dy in dirs:
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
-                    q.append((nx, ny))
+                    if (nx, ny) not in visited:
+                        q.append((nx, ny))
+                        visited.add((nx, ny))
+                        pred[(nx, ny)] = (x, y)
 
-    return False
+    return []
 
 
 def AStar(maze):
@@ -86,6 +121,9 @@ def AStar(maze):
 
     h, w = maze.shape[0], maze.shape[1]  # real height and width
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
+    visited = set()
+    pred = {start: None}  # predecessor of each node
+    visited.add(start)
 
     priorQueue = [
         (0 + getH(start, end),  # f: total cost (g+h), where g: current path cost (default 0), h heuristic cost
@@ -96,14 +134,18 @@ def AStar(maze):
 
     while priorQueue:
         f, g, x, y = heapq.heappop(priorQueue)  # pop the smallest cost node
-        if (x, y) == end: return True
+
+        if (x, y) == end: return reconstruct_path(pred, start, end)
+
         if not maze[x, y].visited:
             maze[x, y].visited = True
             for dx, dy in dirs:
                 nx, ny = x + dx, y + dy
-                if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1:
+                if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val == 1 and (nx, ny) not in visited:
                     heapq.heappush(priorQueue, ((g + 1) + getH((nx, ny), end), (g + 1), nx, ny))
-    return False
+                    visited.add((nx, ny))
+                    pred[(nx, ny)] = (x, y)
+    return []
 
 
 def MDP_VI(maze, gamma=0.9, threshold=0.01):
@@ -119,7 +161,7 @@ def MDP_VI(maze, gamma=0.9, threshold=0.01):
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
 
     states = [(x, y) for x in range(h) for y in range(w) if maze[x, y].val != 0]  # movable places (NOT wall)
-    value_map = np.zeros_like(maze, dtype=np.float32)
+    valueMap = np.zeros_like(maze, dtype=np.float32)
     reward = -1  # reward policy
 
     while True:
@@ -127,11 +169,12 @@ def MDP_VI(maze, gamma=0.9, threshold=0.01):
         for x, y in states:
             if (x, y) == end: continue  # skip ending point
 
-            tmp_v = value_map[x, y]  # temp value
-            value_map[x, y] = max([(reward + gamma * value_map[
-                x + dx, y + dy]) if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val != 0 else float(
+            tmp_v = valueMap[x, y]  # temp value
+            valueMap[x, y] = max([(reward + gamma * valueMap[x + dx, y + dy]) if 0 <= x + dx < h and 0 <= y + dy < w and
+                                                                                 maze[
+                                                                                     x + dx, y + dy].val != 0 else float(
                 '-inf') for dx, dy in dirs])
-            delta = max(delta, abs(tmp_v - value_map[x, y]))
+            delta = max(delta, abs(tmp_v - valueMap[x, y]))
 
         if delta < threshold: break
 
@@ -139,7 +182,7 @@ def MDP_VI(maze, gamma=0.9, threshold=0.01):
     for x, y in states:
         if (x, y) == end: continue
 
-        values = [value_map[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w and maze[
+        values = [valueMap[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w and maze[
             x + dx, y + dy].val != 0 else float('-inf') for dx, dy in dirs]
         policy[x, y] = np.argmax(values)
 
@@ -156,7 +199,7 @@ def MDP_PI(maze, gamma=0.9):
     @return:
     """
 
-    def iterValue(policy, valueMap, maze, gamma=0.9, reward=-1):
+    def iterValue(policy, valueMap, maze, gamma=0.9, reward=-1, threshold=0.01):
         while True:
             delta = 0
             for x in range(h):
@@ -166,71 +209,53 @@ def MDP_PI(maze, gamma=0.9):
                     tmp_v = valueMap[x, y]
                     dx, dy = dirs[policy[x, y]]
                     nx, ny = x + dx, y + dy
-                    if 0 <= nx < h and 0 <= ny < w and maze[nx, ny] != 0:
+                    if 0 <= nx < h and 0 <= ny < w and maze[nx, ny].val != 0:
                         valueMap[x, y] = reward + gamma * valueMap[nx, ny]
                     else:
                         valueMap[x, y] = reward
                     delta = max(delta, abs(tmp_v - valueMap[x, y]))
-            if delta < 0.01:
+            if delta < threshold:
                 break
         return valueMap
 
     h, w = maze.shape[0], maze.shape[1]  # real height and width
     start, end = (0, 0), (h - 1, w - 1)  # set start point and end point
     states = [(x, y) for x in range(h) for y in range(w) if maze[x, y].val != 0]  # movable places (NOT wall)
-    value_map = np.zeros_like(maze, dtype=np.float32)
-    policy = np.random.choice([0, 1, 2, 3], size=maze.shape)  # Initial random policy
+    valueMap = np.zeros_like(maze, dtype=np.float32)
+    policy = np.random.choice(len(dirs), size=maze.shape)  # Initial random policy
 
     while True:
-        value_map = iterValue(policy, value_map, maze, gamma)
-        policy_stable = True
+        valueMap = iterValue(policy, valueMap, maze, gamma)
+        policyStable = True
 
         for x, y in states:
             if (x, y) == end: continue
 
-            old_action = policy[x, y]
-            action_values = [float('-inf')] * 4
+            # old_action = policy[x, y]
+            # values = [valueMap[x + dx, y + dy] if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val == 1 else float('-inf') for dx, dy in dirs]
+            # policy[x, y] = np.argmax(values)
+            # if old_action != policy[x, y]:
+            #     policyStable = False
 
-            for action, (dx, dy) in enumerate(dirs):
+            oldAction = policy[x, y]
+            actionValues = [float('-inf')] * 4
+
+            for actionID, (dx, dy) in enumerate(dirs):
                 if 0 <= x + dx < h and 0 <= y + dy < w and maze[x + dx, y + dy].val != 0:
-                    action_values[action] = value_map[x + dx, y + dy]
-            best_action = np.argmax(action_values)
-            policy[x, y] = best_action
-            if old_action != best_action:
-                policy_stable = False
+                    actionValues[actionID] = valueMap[x + dx, y + dy]
+            maxAction = np.argmax(actionValues)
+            policy[x, y] = maxAction
 
-        if policy_stable:
+            if oldAction != maxAction:
+                policyStable = False
+
+        if policyStable:
             break
-
-    policy = trace_path_from_start(policy, maze, start, end)
 
     return policy
 
 
-def trace_path_from_start(policy, maze, start, end):
-    path = []
-    current_state = start
-    while True:
-        x, y = current_state
-        if (x, y) == end: break
-
-        action = policy[x, y]
-        if action == -1: break
-
-        path.append(current_state)
-
-        if action == 0:  # Right
-            current_state = (x, y + 1)
-        elif action == 1:  # Down
-            current_state = (x + 1, y)
-        elif action == 2:  # Left
-            current_state = (x, y - 1)
-        elif action == 3:  # Up
-            current_state = (x - 1, y)
-    return path
-
-
-def plot_policy_on_maze(maze, policy):
+def plot_policy_on_maze(maze, policy, title=''):
     # Define a simple mapping from policy actions to arrow directions
     arrows = {0: '→', 1: '↓', 2: '←', 3: '↑'}
 
@@ -247,6 +272,32 @@ def plot_policy_on_maze(maze, policy):
     ax.set_xticks([])
     ax.set_yticks([])
 
+    if title:
+        plt.title(f'{title} Solving Maze: {int((maze.shape[0] + 1) / 2)}x{int((maze.shape[1] + 1) / 2)}')
+    plt.show()
+
+
+def plotPath(maze, path, title=''):
+    fig, ax = plt.subplots(figsize=(10, 10))
+    cmap = ListedColormap(['black', 'white'])
+    ax.imshow(maze, cmap=cmap)  # 'binary' colormap for black and white
+
+    # Extract X and Y coordinates from the path
+    xs, ys = zip(*path)
+
+    # Plot the path on the maze
+    ax.plot(ys, xs, color='red', linewidth=2)  # Note the order of ys and xs due to the way matrices are plotted
+
+    # Customize the plot
+    ax.set_xticks(np.arange(-.5, maze.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-.5, maze.shape[0], 1), minor=True)
+    ax.grid(which="minor", color="w", linestyle='-', linewidth=2)
+    ax.tick_params(which="minor", size=0)
+
+    # Hide the axes
+    plt.axis('off')
+    if title:
+        plt.title(f'{title} Solving Maze: {int((maze.shape[0] + 1) / 2)}x{int((maze.shape[1] + 1) / 2)}')
     plt.show()
 
 
@@ -398,7 +449,7 @@ class Maze:
 
         # tarnsform matrix
         self.matOrigin = matrix = np.array(matrix)[1:-1, 1:-1]
-        print(self.matOrigin)
+        # print(self.matOrigin)
 
         matrix = np.array([GridCell(i, j, matrix[i, j]) for i, row in enumerate(matrix) for j, col in enumerate(row)])
         matrix = matrix.reshape(2 * self.width - 1, 2 * self.height - 1)
@@ -409,13 +460,128 @@ class Maze:
 def main():
     width = 10
     height = 10
-    maze = Maze(width=width, height=height)
-    # print(maze.matOrigin)
-    # Maze(width=width, height=height).draw()
 
-    r = MDP_PI(maze.mat)
-    # print(r)
-    plot_policy_on_maze(maze.matOrigin, r)
+    isSearchAlgo = False  # switch for searching algorithms: DFS, BFS, A*
+    isMdp = True # switch for MDP: value iteration, policy iterations
+
+    if isSearchAlgo:
+        timeComplex = defaultdict(list)  # record execute time
+        spaceComplex = defaultdict(list)  # record memory consumption
+
+        # execute 5 times to get average
+        for i in range(5):
+            maze = Maze(width=width, height=height)
+            maze_bfs = copy.deepcopy(maze)
+            maze_dfs = copy.deepcopy(maze)
+            maze_AStar = copy.deepcopy(maze)
+
+            # BFS
+            tracemalloc.start()
+            ts = time.perf_counter()
+            pBFS = BFS(maze_bfs.mat)
+            te = time.perf_counter()
+            t = te - ts  # get execution time
+            curMemo, peakMemo = tracemalloc.get_traced_memory()  # get the current memory usage
+
+            timeComplex['BFS'].append(t)
+            spaceComplex['BFS'].append((curMemo, peakMemo))
+            plotPath(maze_bfs.matOrigin, pBFS, title='BFS')
+
+            # DFS
+            tracemalloc.start()
+            ts = time.perf_counter()
+            pDFS = DFS(maze_dfs.mat)
+            te = time.perf_counter()
+            t = te - ts
+            curMemo, peakMemo = tracemalloc.get_traced_memory()  # get the current memory usage
+
+            timeComplex['DFS'].append(t)
+            spaceComplex['DFS'].append((curMemo, peakMemo))
+            plotPath(maze_dfs.matOrigin, pDFS, title='DFS')
+
+            # A Star
+            tracemalloc.start()
+            ts = time.perf_counter()
+            pAStar = AStar(maze_AStar.mat)
+            te = time.perf_counter()
+            t = te - ts
+            curMemo, peakMemo = tracemalloc.get_traced_memory()  # get the current memory usage
+
+            timeComplex['AStar'].append(t)
+            spaceComplex['AStar'].append((curMemo, peakMemo))
+            plotPath(maze_AStar.matOrigin, pAStar, title='A Star')
+
+        printTimeSpaceInfo(timeComplex, spaceComplex)
+        # compute average time and space complexity
+        # for k, timeList in timeComplex.items():
+        #     print(f'{k} time: {sum(timeList) / len(timeList)}')
+        #
+        # print()
+        #
+        # for k, spaceList in spaceComplex.items():
+        #     sum_curMemo = 0
+        #     sum_peakMemo = 0
+        #     for curMemo, peakMemo in spaceList:
+        #         sum_curMemo += curMemo
+        #         sum_peakMemo += peakMemo
+        #
+        #     averMemo = sum_curMemo / len(spaceList) / 10 ** 6
+        #     averPeak = sum_peakMemo / len(spaceList) / 10 ** 6
+        #
+        #     print(f'{k} current memo: {averMemo} MB. \n{k} peak memo: {averPeak} MB\n')
+
+    if isMdp:
+        timeComplex = defaultdict(list)  # record execute time
+        spaceComplex = defaultdict(list)  # record memory consumption
+
+        for i in range(5):
+            maze = Maze(width=width, height=height)
+            maze_MDP_VI = copy.deepcopy(maze)
+            maze_MDP_PI = copy.deepcopy(maze)
+
+            # MDP Value Iteration
+            tracemalloc.start()
+            ts = time.perf_counter()
+            pMDP_VI = MDP_VI(maze_MDP_VI.mat)
+            te = time.perf_counter()
+            t = te - ts
+            curMemo, peakMemo = tracemalloc.get_traced_memory()  # get the current memory usage
+            timeComplex['MDP_VI'].append(t)
+            spaceComplex['MDP_VI'].append((curMemo, peakMemo))
+            plot_policy_on_maze(maze_MDP_VI.matOrigin, pMDP_VI, title='MDP-Value Iteration')
+
+            # MDP Policy Iteration
+            tracemalloc.start()
+            ts = time.perf_counter()
+            pMDP_PI = MDP_PI(maze_MDP_PI.mat)
+            te = time.perf_counter()
+            t = te - ts
+            curMemo, peakMemo = tracemalloc.get_traced_memory()  # get the current memory usage
+            timeComplex['MDP_PI'].append(t)
+            spaceComplex['MDP_PI'].append((curMemo, peakMemo))
+            plot_policy_on_maze(maze_MDP_PI.matOrigin, pMDP_PI, title='MDP-Policy Iteration')
+
+        printTimeSpaceInfo(timeComplex, spaceComplex)
+
+
+def printTimeSpaceInfo(timeComplex, spaceComplex):
+    # compute average time and space complexity
+    for k, timeList in timeComplex.items():
+        print(f'{k} time: {sum(timeList) / len(timeList)}')
+
+    print()
+
+    for k, spaceList in spaceComplex.items():
+        sum_curMemo = 0
+        sum_peakMemo = 0
+        for curMemo, peakMemo in spaceList:
+            sum_curMemo += curMemo
+            sum_peakMemo += peakMemo
+
+        averMemo = sum_curMemo / len(spaceList) / 10 ** 6
+        averPeak = sum_peakMemo / len(spaceList) / 10 ** 6
+
+        print(f'{k} current memo: {averMemo} MB. \n{k} peak memo: {averPeak} MB\n')
 
 
 if __name__ == '__main__':
