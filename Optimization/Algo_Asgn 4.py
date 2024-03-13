@@ -6,6 +6,7 @@ import warnings
 x, y = sp.symbols('x y', real=True)
 f1 = 10 * (x - 9) ** 4 + 7 * (y - 0) ** 2  # function 1
 f2 = sp.Max(x - 9, 0) + 7 * sp.Abs(y)  # function 2
+f_relu = sp.Max(0, x)
 
 
 def a_i_Polyak(f, iteration=100, epsilon=1e-3, x_val=10, y_val=5):
@@ -20,17 +21,14 @@ def a_i_Polyak(f, iteration=100, epsilon=1e-3, x_val=10, y_val=5):
     """
     df_dx = sp.diff(f, x)
     df_dy = sp.diff(f, y)
-
     f_star = 0  # minimum value of f(x)
     f_cur = f.subs({x: x_val, y: y_val})  # current value of f(x)
-
     for i in range(iteration):
         # calculate polyak step size alpha
         grad_x = df_dx.subs({x: x_val, y: y_val}).evalf()
         grad_y = df_dy.subs({x: x_val, y: y_val}).evalf()
         grad_sum = grad_x * grad_x + grad_y * grad_y  # sum all feature gradients at current point
         alpha = (f_cur - f_star) / (grad_sum + epsilon)
-
         # update x and y with polyak step size and move current f(x) to new point
         x_val -= alpha * grad_x
         y_val -= alpha * grad_y
@@ -56,9 +54,7 @@ def a_ii_RmsProp(f, iteration=100, alpha=0.1, beta=0.9, epsilon=1e-3, x_val=10, 
 
     df_dx = sp.diff(f, x)
     df_dy = sp.diff(f, y)
-
     grad_sum_x, grad_sum_y = 0, 0
-
     for i in range(iteration):
         grad_x = df_dx.subs({x: x_val, y: y_val}).evalf()
         grad_y = df_dy.subs({x: x_val, y: y_val}).evalf()
@@ -170,14 +166,14 @@ def a_iv_Adam(f, iteration=100, alpha=0.1, beta1=0.9, beta2=0.999, epsilon=1e-3,
         return f_ret, path_trajectory
 
 
-def b_i_plot_RMSProp(f, iter_num=100):
-    betas = [0.25, 0.9]
-    alphas = [0.01, 0.05, 0.1]
+def b_i_plot_RMSProp(f, iter_num=100, alpha=[0.01, 0.05, 0.1], beta=[0.25, 0.9], x_val=1, y_val=1):
+    # betas = [0.25, 0.9]
+    # alphas = [0.01, 0.05, 0.1]
     plt.figure(figsize=(10, 10))
 
-    for a in alphas:
-        for b in betas:
-            f_ret, step_size = a_ii_RmsProp(f, iteration=iter_num, alpha=a, beta=b, x_val=3, y_val=1)
+    for a in alpha:
+        for b in beta:
+            f_ret, step_size = a_ii_RmsProp(f, iteration=iter_num, alpha=a, beta=b, x_val=x_val, y_val=y_val)
 
             plt.subplot(2, 1, 1)
             plot_(f_ret, f'alpha={a}, beta={b}', 'Iteration', 'Function Value', f'RMSProp: {f}')
@@ -188,17 +184,17 @@ def b_i_plot_RMSProp(f, iter_num=100):
     plt.show()
 
 
-def b_ii_plot_HeaveyBall(f, iter_num=100):
-    betas = [0.25, 0.8]
-    alphas = [0.01, 0.05]
+def b_ii_plot_HeaveyBall(f, iter_num=100, alpha=[0.01, 0.05], beta=[0.25, 0.8], x_val=10, y_val=5):
+    # betas = [0.25, 0.8]
+    # alphas = [0.01, 0.05]
     plt.figure(figsize=(10, 10))
 
-    for a in alphas:
-        for b in betas:
-            f_ret, step_size = a_iii_HeavyBall(f, iteration=iter_num, alpha=a, beta=b)
+    for a in alpha:
+        for b in beta:
+            f_ret, step_size = a_iii_HeavyBall(f, iteration=iter_num, alpha=a, beta=b, x_val=x_val, y_val=y_val)
 
             plt.subplot(2, 1, 1)
-            plot_(f_ret, f'alpha={a}, beta={b}', 'Iteration', 'Function Value', f'RMSProp: {f}')
+            plot_(f_ret, f'alpha={a}, beta={b}', 'Iteration', 'Function Value', f'HeaveyBall: {f}')
 
             plt.subplot(2, 1, 2)
             plot_(step_size, f'alpha={a}, beta={b}', 'Iteration', 'Step Size')
@@ -206,16 +202,13 @@ def b_ii_plot_HeaveyBall(f, iter_num=100):
     plt.show()
 
 
-def b_iii_plot_Adam(f, iter_num=100):
-    beta1 = [0.25, 0.9]
-    beta2 = 0.999
-    alphas = [0.25, 0.5, 0.8]
+def b_iii_plot_Adam(f, iter_num=100, alpha=[0.25, 0.5, 0.8], beta1=[0.25, 0.9], beta2=0.999, x_val=1, y_val=5):
     plt.figure(figsize=(10, 10))
 
-    for a in alphas:
+    for a in alpha:
         for b1 in beta1:
-            f_ret = a_iv_Adam(f, iteration=iter_num, alpha=a, beta1=b1, beta2=beta2)
-            plot_(f_ret, f'alpha={a}, beta1={b1}, beta2={beta2}', 'Iteration', 'Function Value', f'RMSProp: {f}')
+            f_ret = a_iv_Adam(f, iteration=iter_num, alpha=a, beta1=b1, beta2=beta2, x_val=x_val, y_val=y_val)
+            plot_(f_ret, f'alpha={a}, beta1={b1}, beta2={beta2}', 'Iteration', 'Function Value', f'Adam: {f}')
 
     plt.show()
 
@@ -251,12 +244,18 @@ def b_iv_plot_contour(f, iter_num=100):
     plt.plot(adam_x, adam_y, 'g.-', label='Adam Path')
 
     # Adding labels and legend
-    plt.title('Optimization paths on contour plot')
+    plt.title('Contour plot for RMSProp, HeavyBall, Adam')
     plt.xlabel('x')
     plt.ylabel('y')
     plt.legend()
 
     plt.show()
+
+
+def c_i_plot_Relu(f=f_relu):
+    b_i_plot_RMSProp(f, iter_num=500, alpha=[0.05], beta=[0.8], x_val=100, y_val=0)
+    b_ii_plot_HeaveyBall(f, alpha=[0.01], beta=[0.8], x_val=100, y_val=0)
+    b_iii_plot_Adam(f, alpha=[0.5], beta1=[0.9], x_val=100, y_val=0)
 
 
 def plot_(variables, label, xlabel, ylabel, title=None):
@@ -268,38 +267,22 @@ def plot_(variables, label, xlabel, ylabel, title=None):
     plt.yscale('log')
 
 
-def plot_contour(f, x, y):
-    f_lambda = sp.lambdify((x, y), f, 'numpy')
-
-    X = np.linspace(0, 10, 400)
-    Y = np.linspace(-5, 5, 400)
-    X, Y = np.meshgrid(X, Y)
-    Z = f_lambda(X, Y)
-
-    plt.figure(figsize=(8, 6))
-    contour = plt.contour(X, Y, Z, levels=np.logspace(0, 5, 35), cmap='viridis')
-    plt.clabel(contour, inline=True, fontsize=8)
-    plt.title(f'Contour plot of {f}')
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.colorbar(contour)
-    # plt.show()
-
-
 def main():
-    # a_i_Polyak(f2)
-    # a_iv_Adam(f1, alpha=0.5, beta1=0.9, beta2=0.999)
-    # a_ii_RmsProp(f1, beta=0.7)
-    # a_iii_HeavyBall(f1, alpha=0.01, beta=0.8)
-    # a_iii_HeavyBall(f2, alpha=0.008, beta=0.9)
+    a_i_Polyak(f2)
+    a_iv_Adam(f1, alpha=0.5, beta1=0.9, beta2=0.999)
+    a_ii_RmsProp(f1, beta=0.7)
+    a_iii_HeavyBall(f1, alpha=0.01, beta=0.8)
+    a_iii_HeavyBall(f2, alpha=0.008, beta=0.9)
 
-    # b_i_plot_RMSProp(f1, iter_num=500)
-    # b_i_plot_RMSProp(f2)
-    # b_ii_plot_HeaveyBall(f1, iter_num=100)
-    # b_ii_plot_HeaveyBall(f2, iter_num=50)
-    # b_iii_plot_Adam(f2, iter_num=30)
-    # b_iii_plot_Adam(f1)
+    b_i_plot_RMSProp(f1, iter_num=300)
+    b_i_plot_RMSProp(f2)
+    b_ii_plot_HeaveyBall(f1, iter_num=100)
+    b_ii_plot_HeaveyBall(f2, iter_num=50)
+    b_iii_plot_Adam(f1)
+    b_iii_plot_Adam(f2, iter_num=30)
     b_iv_plot_contour(f1, iter_num=50)
+
+    c_i_plot_Relu()
 
 
 if __name__ == '__main__':
